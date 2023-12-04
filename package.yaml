@@ -46,6 +46,7 @@ library:
   - bytestring
   - text
   - parsec
+  - containers
 
 executables:
   aoc2023-exe:
