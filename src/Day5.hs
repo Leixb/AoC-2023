@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+
 module Day5 where
 
 import Control.Applicative
@@ -7,56 +9,86 @@ import Relude.Unsafe (read)
 import Text.Parsec
 import Text.Parsec.Text
 
-data Mapping = Mapping
-  { destStart :: Int,
-    sourceStart :: Int,
-    size :: Int
-  }
-  deriving (Show)
+-- Binary search tree, where each node is an interval
+-- It is not an interval tree, since there is no overlapping intervals
+data Tree a = Leaf | Node a (Tree a) (Tree a) deriving (Show, Functor)
 
-applyMapping :: Mapping -> Int -> Maybe Int
-applyMapping (Mapping dest src sz) n
-  | n >= src && n < src + sz = Just $ n + (dest - src)
-  | otherwise = Nothing
+insert :: (Ord a) => a -> Tree a -> Tree a
+insert x Leaf = Node x Leaf Leaf
+insert x (Node y left right)
+  | x < y = Node y (insert x left) right
+  | otherwise = Node y left (insert x right)
 
-defaultMapping :: Mapping
-defaultMapping = Mapping 0 0 maxBound
+data Interval a = Interval {start :: a, end :: a, delta :: a} deriving (Show, Eq, Ord, Functor)
 
-maybeToId :: (Int -> Maybe Int) -> Int -> Int
-maybeToId f n = fromMaybe n (f n)
+type IntervalTree a = Tree (Interval a)
 
-applyMappings :: [Mapping] -> Int -> Maybe Int
-applyMappings mappings n = asum (applyMapping <$> mappings <*> pure n)
+buildTree :: (Ord a) => [Interval a] -> Tree (Interval a)
+buildTree = foldl' (flip insert) Leaf
 
-toMapping :: [Int] -> Maybe Mapping
-toMapping [dest, src, sz] = Just (Mapping dest src sz)
-toMapping _ = Nothing
+getDelta :: (Num a, Ord a) => Tree (Interval a) -> a -> a
+getDelta Leaf _ = 0
+getDelta (Node (Interval s e d) left right) n
+  | n >= s && n <= e = d
+  | n < s = getDelta left n
+  | otherwise = getDelta right n
 
-parseMapping :: Parser [Mapping]
+composeTrees :: (Monoid a, Num a, Ord a) => [Tree (Interval a)] -> a -> a
+composeTrees trees n = foldl' (\acc t -> acc <> getDelta t acc) n trees
+
+toInterval :: (Num a) => [a] -> Maybe (Interval a)
+toInterval [dest, src, sz] = Just $ Interval src (src + sz - 1) (dest - src)
+toInterval _ = Nothing
+
+parseMapping :: Parser (IntervalTree Int)
 parseMapping = do
   _ <- many1 letter *> string "-to-" *> many1 letter *> string " map:" *> newline
   mappings <- (many1 digit `sepBy` char ' ') `sepBy1` newline
-  let intMappings = fmap (fmap read) mappings :: [[Int]]
-      mappings' = mapMaybe toMapping intMappings :: [Mapping]
 
-  return mappings'
+  return . buildTree . mapMaybe (toInterval . fmap read) $ mappings
 
 parseSeeds :: Parser [Int]
 parseSeeds = string "seeds: " *> (read <$> many1 digit) `sepBy` char ' ' <* newline
 
-parseAll :: Parser ([[Mapping]], [Int])
+parseAll :: Parser ([IntervalTree Int], [Int])
 parseAll = do
   seeds <- parseSeeds <* spaces
   mappings <- parseMapping `sepBy1` spaces <* eof
 
   return (mappings, seeds)
 
-chain :: [[Mapping]] -> Int -> Int
-chain = foldl' (flip (.)) id . fmap (maybeToId . applyMappings)
+toSumTree :: IntervalTree a -> IntervalTree (Sum a)
+toSumTree = fmap (fmap Sum)
 
-run :: FilePath -> IO Int
-run path = do
+withSum :: (Sum a -> Sum a) -> a -> a
+withSum f = getSum . f . Sum
+
+run2 :: FilePath -> IO (Int -> Int)
+run2 path = do
   input <- decodeUtf8 <$> readFileBS path
   case parse parseAll "" input of
     Left err -> error (show err)
-    Right (mappings, seeds) -> return . minimum $ chain mappings <$> seeds
+    Right (trees, seeds) -> return $ withSum $ composeTrees $ toSumTree <$> trees
+
+type Problem = ([IntervalTree Int], [Int])
+
+run :: FilePath -> (Problem -> Int) -> IO Int
+run path f = do
+  input <- decodeUtf8 <$> readFileBS path
+  let p = parseData input
+
+  return $ f p
+
+part1 :: Problem -> Int
+part1 (trees, seeds) =
+  let f = withSum (composeTrees $ toSumTree <$> trees)
+   in minimum $ f <$> seeds
+
+run1 :: FilePath -> IO Int
+run1 = flip run part1
+
+parseData :: Text -> Problem
+parseData input =
+  case parse parseAll "" input of
+    Left err -> error (show err)
+    Right (trees, seeds) -> (trees, seeds)
