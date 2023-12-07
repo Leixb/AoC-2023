@@ -2,34 +2,38 @@ module Day7 where
 
 import Data.Char
 import Relude
-import Relude.Unsafe (read)
+import qualified Relude.Unsafe as Unsafe
 import Text.ParserCombinators.ReadP
 
 type Card = Int
 
 type Problem = [Bet]
 
-newtype Hand = Hand [Card] deriving (Show, Eq)
-
-data Bet = Bet {hand :: Hand, bet :: Int} deriving (Show, Eq)
+data Bet = Bet {hand :: [Card], bet :: Int} deriving (Show, Eq)
 
 -- Part 1
 
-instance Ord Hand where
-  compare (Hand h1) (Hand h2) =
-    case compare (toPairings h1) (toPairings h2) of
-      EQ -> compare h1 h2
-      x -> x
-    where
-      toPairings = sortOn Down . fmap length . group . sort
+rankCards :: [Card] -> [Card] -> Ordering
+rankCards h1 h2 = case compare (fst <$> toPairings h1) (fst <$> toPairings h2) of
+  EQ -> compare h1 h2
+  x -> x
+
+toPairings :: [Card] -> [(Int, Card)]
+toPairings = sortOn Down . fmap (length &&& Unsafe.head) . group . sort
 
 part1 :: Problem -> Int
-part1 = sum . zipWith (*) [1 ..] . fmap bet . sortOn hand
+part1 = sum . zipWith (*) [1 ..] . fmap bet . sortBy (rankCards `on` hand)
+
+run1 :: FilePath -> IO (Maybe Int)
+run1 file = fmap part1 . runParser parseHands . decodeUtf8 <$> readFileBS file
 
 -- Parsing
 
 parseHands :: ReadP Problem
-parseHands = ((Bet . Hand <$> many1 parseCard) <* char ' ' <*> (read <$> munch1 isDigit)) `sepBy` char '\n' <* char '\n' <* eof
+parseHands = ((Bet <$> parseHand) <* char ' ' <*> (Unsafe.read <$> munch1 isDigit)) `sepBy` char '\n' <* char '\n' <* eof
+
+parseHand :: ReadP [Card]
+parseHand = many1 parseCard
   where
     parseCard =
       asum
