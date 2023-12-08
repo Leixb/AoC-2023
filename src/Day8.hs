@@ -1,6 +1,6 @@
 module Day8 where
 
-import Data.Char (isAlpha, isAlphaNum)
+import Data.Char (isAlphaNum)
 import qualified Data.Map as M
 import Relude
 import Text.ParserCombinators.ReadP
@@ -38,6 +38,10 @@ part1 :: Problem -> Int
 part1 (m, t) = length . takeWhile (/= end) $ scanl' (step m) start t
 
 -- | Part 2
+--
+-- Doing it naively is too slow, we need to find the pattern of when
+-- the ghosts are on end nodes. Taking the LCM of the lengths of the cycles
+-- of each ghost will give us the answer.
 isStart, isEnd :: Node -> Bool
 isStart = (Just 'A' ==) . viaNonEmpty last
 isEnd = (Just 'Z' ==) . viaNonEmpty last
@@ -45,11 +49,20 @@ isEnd = (Just 'Z' ==) . viaNonEmpty last
 getStarts :: Problem -> [Node]
 getStarts (m, _) = M.keys $ M.filterWithKey (\k _ -> isStart k) m
 
-allEnd :: [Node] -> Bool
-allEnd = all isEnd
-
 part2 :: Problem -> Int
 part2 (m, t) =
   let simulStep :: [Node] -> Side Node -> [Node]
       simulStep ns f = fmap (flip (step m) f) ns
-   in length . takeWhile (not . allEnd) . scanl' simulStep (getStarts (m, t)) $ t
+      starts = getStarts (m, t)
+      l = ghostSteps . scanl' simulStep starts $ t
+   in foldl' lcm 1 [computeOne $ filter ((== i) . snd) l | i <- [1 .. (length starts)]]
+
+endIndices :: Int -> [Node] -> [(Int, Int)]
+endIndices n l = catMaybes $ zipWith (\i x -> if isEnd x then Just (n, i) else Nothing) [1 ..] l
+
+ghostSteps :: [[Node]] -> [(Int, Int)]
+ghostSteps l = concat $ zipWith endIndices [1 ..] l
+
+computeOne :: [(Int, Int)] -> Int
+computeOne ((a, _) : (b, _) : _) = b - a
+computeOne _ = error "Invalid input"
