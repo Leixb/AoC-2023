@@ -4,8 +4,8 @@ import Relude
 
 type Problem = [[Int]]
 
-parse :: Text -> Problem
-parse = fmap (mapMaybe (readMaybe . toString) . words) . lines
+parse :: Text -> Maybe Problem
+parse = traverse (traverse (readMaybe . toString) . words) . lines
 
 delta :: [Int] -> [Int]
 delta = fromMaybe [] . viaNonEmpty delta'
@@ -23,9 +23,9 @@ part1, part2 :: Problem -> Int
 part1 = sum . fmap next
 part2 = sum . fmap prev
 
-run :: (Problem -> a) -> FilePath -> IO a
-run f = (f . parse . decodeUtf8 <$>) . readFileBS
+run :: (Problem -> a) -> FilePath -> IO (Maybe a)
+run f = (fmap f . parse . decodeUtf8 <$>) . readFileBS
 
-run1, run2 :: FilePath -> IO Int
+run1, run2 :: FilePath -> IO (Maybe Int)
 run1 = run part1
 run2 = run part2
