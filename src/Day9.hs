@@ -1,6 +1,5 @@
 module Day9 where
 
-import Control.Arrow
 import Relude
 
 type Problem = [[Int]]
@@ -8,27 +7,25 @@ type Problem = [[Int]]
 parse :: Text -> Problem
 parse = fmap (mapMaybe (readMaybe . toString) . words) . lines
 
-part1 :: Problem -> Int
-part1 = sum . fmap getNext
+delta :: [Int] -> [Int]
+delta = fromMaybe [] . viaNonEmpty delta'
+  where
+    delta' l = zipWith (-) (tail l) (toList l)
 
-delta :: NonEmpty Int -> [Int]
-delta = tail &&& toList >>> uncurry (zipWith (-))
+allDeltas :: [Int] -> [[Int]]
+allDeltas = takeWhile (any (/= 0)) . iterate delta
 
-delta' :: [Int] -> [Int]
-delta' = fromMaybe [] . viaNonEmpty delta
+next, prev :: [Int] -> Int
+next = sum . fmap last . mapMaybe nonEmpty . allDeltas
+prev = sum . zipWith (*) (cycle [1, -1]) . (fmap head . mapMaybe nonEmpty . allDeltas)
 
-doDeltas :: [Int] -> [[Int]]
-doDeltas = takeWhile (any (/= 0)) . iterate delta'
+part1, part2 :: Problem -> Int
+part1 = sum . fmap next
+part2 = sum . fmap prev
 
-getNext :: [Int] -> Int
-getNext = sum . fmap last . mapMaybe nonEmpty . doDeltas
+run :: (Problem -> a) -> FilePath -> IO a
+run f = (f . parse . decodeUtf8 <$>) . readFileBS
 
-run1 f = readFileBS f <&> part1 . parse . decodeUtf8
-
-run2 f = readFileBS f <&> part2 . parse . decodeUtf8
-
-part2 :: Problem -> Int
-part2 = sum . fmap getPrev
-
-getPrev :: [Int] -> Int
-getPrev l = sum $ zipWith (*) (fmap head . mapMaybe nonEmpty . doDeltas $ l) $ cycle [1, -1]
+run1, run2 :: FilePath -> IO Int
+run1 = run part1
+run2 = run part2
