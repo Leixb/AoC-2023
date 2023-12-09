@@ -12,12 +12,12 @@ delta = fromMaybe [] . viaNonEmpty delta'
   where
     delta' l = zipWith (-) (tail l) (toList l)
 
-allDeltas :: [Int] -> [[Int]]
-allDeltas = takeWhile (any (/= 0)) . iterate delta
+allDeltas :: [Int] -> [NonEmpty Int]
+allDeltas = mapMaybe nonEmpty . takeWhile (any (/= 0)) . iterate delta
 
 next, prev :: [Int] -> Int
-next = sum . fmap last . mapMaybe nonEmpty . allDeltas
-prev = sum . zipWith (*) (cycle [1, -1]) . (fmap head . mapMaybe nonEmpty . allDeltas)
+next = allDeltas >>> sum . fmap last
+prev = allDeltas >>> foldr ((-) . head) 0
 
 part1, part2 :: Problem -> Int
 part1 = sum . fmap next
