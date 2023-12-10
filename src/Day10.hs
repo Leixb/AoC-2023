@@ -76,8 +76,28 @@ getStart p = do
 getStartDir :: Problem -> Direction
 getStartDir = const R -- TODO: Properly decide start direction
 
--- part1 :: Problem -> Int
-part1 p = let (_, _, w) = runRWS runTillEnd p (fromMaybe (0, 0) $ getStart p, getStartDir p) in length w `div` 2
+findPath :: Problem -> [Pos]
+findPath p = let (_, _, w) = runRWS runTillEnd p (fromMaybe (0, 0) $ getStart p, getStartDir p) in w
 
--- run1 :: FilePath -> IO Int
+part1, part2 :: Problem -> Int
+part1 = (`div` 2) . length . findPath
+
+-- PART 2
+
+drawPath :: Problem -> [Pos] -> Problem
+drawPath p path = [[if (x, y) `elem` path then c else '.' | (x, c) <- zip [0 ..] row] | (y, row) <- zip [0 ..] p]
+
+isInside :: Pos -> Problem -> Maybe Bool
+isInside (x, y) grid = grid !!? y <&> odd . length . filter (`elem` ("|JL" :: String)) . drop x
+
+drawInside :: Problem -> Problem
+drawInside p = [[if isInside (x, y) p == Just True && c == '.' then '#' else c | (x, c) <- zip [0 ..] row] | (y, row) <- zip [0 ..] p]
+
+calcInside :: Problem -> Int
+calcInside p = sum . join $ [[if isInside (x, y) p == Just True && c == '.' then 1 else 0 | (x, c) <- zip [0 ..] row] | (y, row) <- zip [0 ..] p]
+
+run1, run2 :: FilePath -> IO Int
 run1 f = part1 <$> (parse . decodeUtf8 <$> readFileBS f)
+run2 f = part2 <$> (parse . decodeUtf8 <$> readFileBS f)
+
+part2 grid = let path = findPath grid in calcInside $ drawPath grid path
