@@ -1,72 +1,48 @@
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TupleSections #-}
 
 module Day11 where
 
-import Data.Array.IArray
-import qualified Data.Text as T
+import Data.ByteString.Char8 (elemIndices, splitWith)
+import Data.Foldable (maximum, minimum)
+import Data.List ((\\))
 import Relude
 
-type Grid = Array (Int, Int) Bool
+type Problem = [(Int, Int)]
 
-parse :: Text -> Maybe Grid
-parse l = do
-  let ls = lines l
-      h = length ls
-  w <- T.length <$> viaNonEmpty head ls
+parse :: ByteString -> Problem
+parse = join . zipWith fn [0 ..] . fmap (elemIndices '#') . splitWith (== '\n')
+  where
+    fn :: Int -> [Int] -> [(Int, Int)]
+    fn y xs = (y,) <$> xs
 
-  pure $ listArray ((1, 1), (h, w)) $ (== '#') <$> T.unpack (T.concat ls)
+findMissing :: [Int] -> [Int]
+findMissing l = let (low, high) = (minimum l, maximum l) in [low .. high] \\ l
 
-findEmptyRows, findEmptyCols :: Grid -> [Int]
-findEmptyRows g = let ((h1, w1), (h2, w2)) = bounds g in [h | h <- [h1 .. h2], not $ any (g !) [(h, w) | w <- [w1 .. w2]]]
-findEmptyCols g = let ((h1, w1), (h2, w2)) = bounds g in [w | w <- [w1 .. w2], not $ any (g !) [(h, w) | h <- [h1 .. h2]]]
+distance :: Int -> [Int] -> [Int] -> (Int, Int) -> (Int, Int) -> Int
+distance n expandedH expandedW (h1, w1) (h2, w2) = dist1D expandedH h1 h2 + dist1D expandedW w1 w2
+  where
+    dist1D expanded c1 c2 | c1 > c2 = dist1D expanded c2 c1
+    dist1D expanded c1 c2 = c2 - c1 + (n - 1) * length (filter (between c1 c2) expanded)
 
-allLocations :: Grid -> [(Int, Int)]
-allLocations g = let ((h1, w1), (h2, w2)) = bounds g in [(h, w) | h <- [h1 .. h2], w <- [w1 .. w2], g ! (h, w)]
-
-distance :: [Int] -> [Int] -> (Int, Int) -> (Int, Int) -> Int
--- distance emptyC emptyR (h1, w1) (h2, w2) | h1 > h2 = distance emptyC emptyR (h2, w1) (h1, w2)
--- distance emptyC emptyR (h1, w1) (h2, w2) | w1 > w2 = distance emptyC emptyR (h1, w2) (h2, w1)
-distance emptyC emptyR (h1, w1) (h2, w2) = distCoord emptyC h1 h2 + distCoord emptyR w1 w2
-
-distance' :: Int -> [Int] -> [Int] -> (Int, Int) -> (Int, Int) -> Int
-distance' n emptyC emptyR (h1, w1) (h2, w2) = distCoord' n emptyC h1 h2 + distCoord' n emptyR w1 w2
-
-distCoord :: [Int] -> Int -> Int -> Int
-distCoord emptyC c1 c2 | c1 > c2 = distCoord emptyC c2 c1
-distCoord emptyC c1 c2 = c2 - c1 + length (filter (\c -> c1 < c && c < c2) emptyC)
-
-distCoord' :: Int -> [Int] -> Int -> Int -> Int
-distCoord' n emptyC c1 c2 | c1 > c2 = distCoord' n emptyC c2 c1
-distCoord' n emptyC c1 c2 = c2 - c1 + (n - 1) * length (filter (\c -> c1 < c && c < c2) emptyC)
+    between a b x = a <= x && x <= b
 
 allPairs :: [a] -> [(a, a)]
 allPairs [] = []
-allPairs (x : xs) = map (x,) xs ++ allPairs xs
+allPairs (x : xs) = fmap (x,) xs ++ allPairs xs
 
-part1 g =
-  let galaxies = allLocations g
-      emptyC = findEmptyCols g
-      emptyR = findEmptyRows g
+solve :: Int -> Problem -> Int
+solve n galaxies =
+  let (expandedH, expandedW) = join bimap findMissing $ unzip galaxies
+   in sum $ uncurry (distance n expandedH expandedW) <$> allPairs galaxies
 
-      pairs = allPairs galaxies
-      pairIds = allPairs [1 .. length galaxies]
-      res = map (uncurry $ distance emptyR emptyC) pairs
-   in traceShow (zip pairIds res) res
+part1, part2 :: Problem -> Int
+part1 = solve 2
+part2 = solve 1_000_000
 
-printGrid :: Maybe Grid -> IO ()
-printGrid (Just g) = do
-  let ((h1, w1), (h2, w2)) = bounds g
-  forM_ [h1 .. h2] $ \h -> do
-    forM_ [w1 .. w2] $ \w -> do
-      putStr $ if g ! (h, w) then "#" else "."
-    putStrLn ""
-printGrid Nothing = putStrLn "Invalid grid"
+run :: (Problem -> Int) -> FilePath -> IO Int
+run f fp = readFileBS fp <&> f . parse
 
-part2 n g =
-  let galaxies = allLocations g
-      emptyC = findEmptyCols g
-      emptyR = findEmptyRows g
-
-      pairs = allPairs galaxies
-      res = map (uncurry $ distance' n emptyR emptyC) pairs
-   in res
+run1, run2 :: FilePath -> IO Int
+run1 = run part1
+run2 = run part2
