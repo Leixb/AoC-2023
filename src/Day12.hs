@@ -27,19 +27,19 @@ parseProblem = parseSpring `sepBy` char '\n'
 parse :: ByteString -> Maybe Problem
 parse = fmap fst . viaNonEmpty last . readP_to_S parseProblem . decodeUtf8
 
-good :: ReadP Status
-good = choice [char '.', char '?'] $> Good
+good :: ReadP ()
+good = choice [char '.', char '?'] $> ()
 
-bad :: ReadP Status
-bad = choice [char '#', char '?'] $> Bad
+bad :: ReadP ()
+bad = choice [char '#', char '?'] $> ()
 
-buildParser :: [Int] -> ReadP [Status]
+buildParser :: [Int] -> ReadP ()
 buildParser l = do
-  f <- many good
-  m <- sequenceA $ intersperse (many1 good) [count x bad | x <- l]
-  e <- many good <* eof
+  _ <- many good
+  sequenceA_ $ intersperse (many1 good) [count x bad | x <- l]
+  _ <- many good <* eof
 
-  return $ concat [f, join m, e]
+  return ()
 
 combinations :: Spring -> Int
 combinations (s, l) = length $ readP_to_S (buildParser l) s
@@ -49,3 +49,13 @@ part1 = sum . fmap combinations
 
 run1 :: FilePath -> IO Int
 run1 f = readFileBS f >>= maybe (fail "parse error") (return . part1) . parse
+
+-- Brute force approach
+part2' :: Problem -> Int
+part2' = sum . fmap (combinations . bimap (join . intersperse "?" . replicate 5) (join . replicate 5))
+
+part2 :: Problem -> Int
+part2 = undefined
+
+run2 :: FilePath -> IO Int
+run2 f = readFileBS f >>= maybe (fail "parse error") (return . part2) . parse
