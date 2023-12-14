@@ -27,13 +27,6 @@ part1 = sum . join . count . move . faceNorth . parse
 rotate :: Problem -> Problem
 rotate = fmap BS.reverse . BS.transpose
 
--- Anti-clockwise
-rotate' :: Problem -> Problem
-rotate' = BS.transpose . fmap BS.reverse
-
-display :: Problem -> IO ()
-display = traverse_ (putStrLn . BS.unpack)
-
 rotMov :: Problem -> Problem
 rotMov = rotate . move
 
@@ -41,33 +34,31 @@ doCycle :: Problem -> Problem
 doCycle = rotMov . rotMov . rotMov . rotMov
 
 doNcycles :: Int -> Problem -> Problem
-doNcycles n = foldr (.) id (replicate n doCycle)
-
--- Iteration number, problem state and map of states to iteration numbers
-type StateType = (Int, Problem, M.Map Problem Int)
-
-doCycles :: State StateType (Int, Int)
-doCycles = do
-  (n, p, m) <- get
-  let p' = doCycle p
-  case M.lookup p' m of
-    Just n' -> pure (n', n + 1)
-    Nothing -> do
-      put (n + 1, p', M.insert p' n m)
-      doCycles
-
-initState :: Problem -> StateType
-initState p = (0, p, M.singleton p 0)
+doNcycles n = foldl' (.) id (replicate n doCycle)
 
 findCycle :: Problem -> (Int, Int)
-findCycle = evalState doCycles . initState
+findCycle = go 0 M.empty
+  where
+    go :: Int -> M.Map Problem Int -> Problem -> (Int, Int)
+    go n m p =
+      let p' = doCycle p
+       in case M.lookup p' m of
+            Just n' -> (n', n + 1)
+            Nothing -> go (n + 1) (M.insert p' n m) p'
 
 part2 :: ByteString -> Int
-part2 = part2' 1_000_000_000
-
-part2' :: Int -> ByteString -> Int
-part2' n input =
-  let (s, r) = findCycle p
+part2 input =
+  let n = 1_000_000_000
       p = faceNorth . parse $ input
+      (s, r) = findCycle p
       numRots = s + ((n - s) `mod` (r - s - 1))
    in sum . join . count $ doNcycles numRots p
+
+-- Convenience functions for debugging:
+
+-- Anti-clockwise
+rotate' :: Problem -> Problem
+rotate' = BS.transpose . fmap BS.reverse
+
+display :: Problem -> IO ()
+display = traverse_ (putStrLn . BS.unpack)
