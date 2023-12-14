@@ -1,6 +1,9 @@
+{-# LANGUAGE NumericUnderscores #-}
+
 module Day14 where
 
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.Map as M
 import Relude
 
 type Problem = [ByteString]
@@ -40,4 +43,31 @@ doCycle = rotMov . rotMov . rotMov . rotMov
 doNcycles :: Int -> Problem -> Problem
 doNcycles n = foldr (.) id (replicate n doCycle)
 
-part2 = fmap count . iterate doCycle . faceNorth . parse
+-- Iteration number, problem state and map of states to iteration numbers
+type StateType = (Int, Problem, M.Map Problem Int)
+
+doCycles :: State StateType (Int, Int)
+doCycles = do
+  (n, p, m) <- get
+  let p' = doCycle p
+  case M.lookup p' m of
+    Just n' -> pure (n', n + 1)
+    Nothing -> do
+      put (n + 1, p', M.insert p' n m)
+      doCycles
+
+initState :: Problem -> StateType
+initState p = (0, p, M.singleton p 0)
+
+findCycle :: Problem -> (Int, Int)
+findCycle = evalState doCycles . initState
+
+part2 :: ByteString -> Int
+part2 = part2' 1_000_000_000
+
+part2' :: Int -> ByteString -> Int
+part2' n input =
+  let (s, r) = findCycle p
+      p = faceNorth . parse $ input
+      numRots = s + ((n - s) `mod` (r - s - 1))
+   in sum . join . count $ doNcycles numRots p
