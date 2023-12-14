@@ -1,6 +1,5 @@
 module Day13 where
 
-import Data.List (elemIndex)
 import Data.Text (dropEnd, splitOn)
 import Relude
 
@@ -28,10 +27,54 @@ splits xs = fromMaybe [] . viaNonEmpty init . drop 1 $ zip (inits xs) (tails xs)
 isMirrorSplit :: (Eq a) => ([a], [a]) -> Bool
 isMirrorSplit (a, b) = and $ zipWith (==) (reverse a) b
 
+bitDiff :: [Bool] -> [Bool] -> Int
+bitDiff a b = length (filter id $ zipWith (/=) a b)
+
 part1 :: Problem -> Int
-part1 p =
-  let pV = fmap (fmap toInt) p
-      pH = fmap (fmap toInt . transpose) p
-      rV = (* 100) $ sum $ length . fst <$> mapMaybe findReflection pV
-      rH = sum $ length . fst <$> mapMaybe findReflection pH
-   in rV + rH
+part1 = sum . fmap (fromEither . first (* 100)) . mapMaybe getReflection
+
+fromEither :: Either a a -> a
+fromEither = either id id
+
+getReflection :: Pattern -> Maybe (Either Int Int)
+getReflection p = do
+  -- let pV = toInt <$> p
+  -- let pH = toInt <$> transpose p
+  let pV = p
+  let pH = transpose p
+
+  case (findReflection pV, findReflection pH) of
+    (Just (a, _), _) -> pure . Left $ length a
+    (_, Just (a, _)) -> pure . Right $ length a
+    _ -> Nothing
+
+part2'' = fmap fromEither . mapMaybe getReflection'
+
+part2' = mapMaybe getReflection'
+
+isMirrorSplit' :: ([[Bool]], [[Bool]]) -> Bool
+isMirrorSplit' (a, b) = (== 1) . sum $ zipWith bitDiff (reverse a) b
+
+findReflection' :: [[Bool]] -> Maybe ([[Bool]], [[Bool]])
+findReflection' xs = find isMirrorSplit' (splits xs)
+
+getReflection' :: Pattern -> Maybe (Either Int Int)
+getReflection' p = do
+  -- let pV = toInt <$> p
+  -- let pH = toInt <$> transpose p
+  let pV = p
+  let pH = transpose p
+
+  case (findReflection' pV, findReflection' pH) of
+    (Just (a, _), Just (b, _)) -> pure $ traceShow (a, b) $ if length a < length b then Left $ length a else Right $ length b
+    (Just (a, _), _) -> pure . Left $ length a
+    (_, Just (a, _)) -> pure . Right $ length a
+    _ -> Nothing
+
+part2 :: Problem -> Int
+part2 = sum . fmap (fromEither . first (* 100)) . mapMaybe getReflection'
+
+-- getReflection' :: Pattern -> Maybe (Either Int Int)
+-- getReflection' p = do
+--   oldRef <- getReflection p
+--   find (/= oldRef) . mapMaybe getReflection $ allFlips p
