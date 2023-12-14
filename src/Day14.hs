@@ -8,51 +8,37 @@ import Relude
 
 type Problem = [ByteString]
 
+-- We apply rotation so that north is to the right, this makes
+-- all computations easier since we can just sort the rows.
 parse :: ByteString -> Problem
-parse = BS.split '\n'
-
--- Our "north" is to the right, since it makes the problem easier
-faceNorth :: Problem -> Problem
-faceNorth = rotate
-
-move :: Problem -> Problem
-move = fmap (BS.intercalate "#" . fmap BS.sort . BS.split '#')
+parse = appEndo rotate . BS.split '\n'
 
 count :: Problem -> [[Int]]
 count = fmap (fmap succ . BS.elemIndices 'O')
 
-part1 :: ByteString -> Int
-part1 = sum . join . count . move . faceNorth . parse
-
-rotate :: Problem -> Problem
-rotate = fmap BS.reverse . BS.transpose
-
-rotMov :: Problem -> Problem
-rotMov = rotate . move
-
-doCycle :: Problem -> Problem
-doCycle = rotMov . rotMov . rotMov . rotMov
-
-doNcycles :: Int -> Problem -> Problem
-doNcycles n = foldl' (.) id (replicate n doCycle)
+rotate, move, doCycle :: Endo Problem
+rotate = Endo $ fmap BS.reverse . BS.transpose
+move = Endo $ fmap (BS.intercalate "#" . fmap BS.sort . BS.split '#')
+doCycle = stimes (4 :: Int) $ rotate <> move
 
 findCycle :: Problem -> (Int, Int)
 findCycle = go 0 M.empty
   where
     go :: Int -> M.Map Problem Int -> Problem -> (Int, Int)
-    go n m p =
-      let p' = doCycle p
-       in case M.lookup p' m of
-            Just n' -> (n', n + 1)
-            Nothing -> go (n + 1) (M.insert p' n m) p'
+    go n m p = case M.lookup p' m of
+      Just n' -> (n', n + 1)
+      Nothing -> go (n + 1) (M.insert p' n m) p'
+      where
+        p' = appEndo doCycle p
 
-part2 :: ByteString -> Int
-part2 input =
-  let n = 1_000_000_000
-      p = faceNorth . parse $ input
-      (s, r) = findCycle p
-      numRots = s + ((n - s) `mod` (r - s - 1))
-   in sum . join . count $ doNcycles numRots p
+part1, part2 :: ByteString -> Int
+part1 = sum . join . count . appEndo move . parse
+part2 input = sum . join . count $ appEndo (stimes numRots doCycle) p
+  where
+    n = 1_000_000_000
+    p = parse input
+    (s, r) = findCycle p
+    numRots = s + ((n - s) `mod` (r - s - 1))
 
 -- Convenience functions for debugging:
 
