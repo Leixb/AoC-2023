@@ -1,14 +1,12 @@
-{-# LANGUAGE LambdaCase #-}
-
-module Day16 where
+module Day16 (part1, part2, parse) where
 
 import Control.Monad.RWS
+import Control.Parallel.Strategies
 import Data.Array
 import qualified Data.ByteString.Char8 as BS
 import Data.Foldable (Foldable (maximum))
 import Data.Set
 import Relude
-import qualified Relude.Unsafe as Unsafe
 
 data Cell = Empty | VertSplitter | HorizSplitter | Slash | Backslash deriving (Show, Eq)
 
@@ -33,122 +31,75 @@ data Beams = Beams
 type Simulation = RWS Grid (Set Pos) Beams
 
 next :: BeamHead -> BeamHead
-next (BeamHead p d) = BeamHead (next' p d) d
+next (BeamHead p d) = BeamHead (next' d p) d
   where
-    next' :: Pos -> Direction -> Pos
-    next' (y, x) direction = case direction of
-      N -> (y - 1, x)
-      S -> (y + 1, x)
-      E -> (y, x + 1)
-      W -> (y, x - 1)
+    next' :: Direction -> Pos -> Pos
+    next' direction = case direction of
+      N -> first pred
+      S -> first succ
+      E -> second succ
+      W -> second pred
 
 advance :: BeamHead -> Simulation [BeamHead]
-advance bh@(BeamHead pos dir) = do
+advance bh@(BeamHead position direction) = do
   grid <- ask
   seen' <- gets seen
 
-  if inRange (bounds grid) pos && bh `notMember` seen'
+  if inRange (bounds grid) position && bh `notMember` seen'
     then do
-      tell $ singleton pos
+      tell $ singleton position
       modify $ \beams -> beams {seen = insert bh seen'}
-      case (grid ! pos, dir) of
-        (Empty, _) -> pure [next bh]
-        (VertSplitter, N) -> pure [next bh]
-        (VertSplitter, S) -> pure [next bh]
-        (HorizSplitter, E) -> pure [next bh]
-        (HorizSplitter, W) -> pure [next bh]
-        (VertSplitter, _) -> pure [next $ bh {dir = N}, next $ bh {dir = S}]
-        (HorizSplitter, _) -> pure [next $ bh {dir = E}, next $ bh {dir = W}]
-        (Slash, N) -> pure [next $ bh {dir = E}]
-        (Slash, S) -> pure [next $ bh {dir = W}]
-        (Slash, E) -> pure [next $ bh {dir = N}]
-        (Slash, W) -> pure [next $ bh {dir = S}]
-        (Backslash, N) -> pure [next $ bh {dir = W}]
-        (Backslash, S) -> pure [next $ bh {dir = E}]
-        (Backslash, E) -> pure [next $ bh {dir = S}]
-        (Backslash, W) -> pure [next $ bh {dir = N}]
+      pure . fmap next $ case (grid ! position, direction) of
+        (Empty, _) -> [bh]
+        (VertSplitter, N) -> [bh]
+        (VertSplitter, S) -> [bh]
+        (HorizSplitter, E) -> [bh]
+        (HorizSplitter, W) -> [bh]
+        (VertSplitter, _) -> [bh {dir = N}, bh {dir = S}]
+        (HorizSplitter, _) -> [bh {dir = E}, bh {dir = W}]
+        (Slash, N) -> [bh {dir = E}]
+        (Slash, S) -> [bh {dir = W}]
+        (Slash, E) -> [bh {dir = N}]
+        (Slash, W) -> [bh {dir = S}]
+        (Backslash, N) -> [bh {dir = W}]
+        (Backslash, S) -> [bh {dir = E}]
+        (Backslash, E) -> [bh {dir = S}]
+        (Backslash, W) -> [bh {dir = N}]
     else pure []
 
-advanceAll :: Simulation ()
-advanceAll = do
-  beams <- gets heads
-  beams' <- concat <$> traverse advance beams
-  modify $ \b -> b {heads = beams'}
+simulate :: Simulation ()
+simulate = do
+  heads' <- join <$> (gets heads >>= traverse advance)
+  modify $ \b -> b {heads = heads'}
+  unless (Relude.null heads') simulate
 
-run :: Simulation ()
-run = do
-  loop
+runSimulation :: BeamHead -> Grid -> Int
+runSimulation origin g = size . snd . evalRWS simulate g $ Beams mempty [origin]
+
+part1, part2 :: Grid -> Int
+part1 = runSimulation $ BeamHead (0, 0) E
+part2 g = maximum $ parMap rpar (`runSimulation` g) possibleInitials
   where
-    loop = do
-      advanceAll
-      beams <- gets heads
-      unless (Relude.null beams) loop
-
-initialBeams :: BeamHead -> Beams
-initialBeams h = Beams mempty [h]
-
-runSimulation :: Grid -> Set Pos
-runSimulation = runSimulation' $ BeamHead (0, 0) E
-
-runSimulation' :: BeamHead -> Grid -> Set Pos
-runSimulation' initial l = snd $ evalRWS run l (initialBeams initial)
-
-part1 :: Grid -> Int
-part1 = size . runSimulation
-
-part2 :: Grid -> Int
-part2 g =
-  let ((y0, x0), (y1, x1)) = bounds g
-      possibleInitials =
-        join
-          [ [BeamHead (y0, x) S | x <- [x0 .. x1]],
-            [BeamHead (y1, x) N | x <- [x0 .. x1]],
-            [BeamHead (y, x0) E | y <- [y0 .. y1]],
-            [BeamHead (y, x1) W | y <- [y0 .. y1]]
-          ]
-   in maximum $ fmap size . runSimulation' <$> possibleInitials <*> [g]
-
-toCell :: Char -> Maybe Cell
-toCell '.' = Just Empty
-toCell '|' = Just VertSplitter
-toCell '-' = Just HorizSplitter
-toCell '/' = Just Slash
-toCell '\\' = Just Backslash
-toCell _ = Nothing
+    ((y0, x0), (y1, x1)) = bounds g
+    possibleInitials =
+      join
+        [ [BeamHead (y0, x) S | x <- [x0 .. x1]],
+          [BeamHead (y1, x) N | x <- [x0 .. x1]],
+          [BeamHead (y, x0) E | y <- [y0 .. y1]],
+          [BeamHead (y, x1) W | y <- [y0 .. y1]]
+        ]
 
 parse :: ByteString -> Maybe Grid
 parse input = do
   let ls = BS.lines input
-      n = length ls
-  m <- BS.length <$> viaNonEmpty head ls
+      h = length ls
+  w <- BS.length <$> viaNonEmpty head ls
   mat <- traverse toCell . BS.unpack $ BS.concat ls
-  pure $ listArray ((0, 0), (n - 1, m - 1)) mat
-
-display :: Grid -> IO ()
-display mat =
-  let ((x0, y0), (x1, y1)) = bounds mat
-   in forM_ [x0 .. x1] $ \i -> do
-        forM_ [y0 .. y1] $ \j -> do
-          putStr $ case mat ! (i, j) of
-            Empty -> "."
-            VertSplitter -> "|"
-            HorizSplitter -> "-"
-            Slash -> "/"
-            Backslash -> "\\"
-        putStrLn ""
-
-displaySeen :: Grid -> Set Pos -> IO ()
-displaySeen g seen = do
-  let ((x0, y0), (x1, y1)) = bounds g
-  forM_ [x0 .. x1] $ \i -> do
-    forM_ [y0 .. y1] $ \j -> do
-      putStr $ if (i, j) `member` seen then "X" else "."
-    putStrLn ""
-
-part1' :: FilePath -> IO ()
-part1' file = do
-  input <- readFileBS file
-  let grid = Unsafe.fromJust $ parse input
-  let seen = runSimulation grid
-  displaySeen grid seen
-  print $ size seen
+  pure $ listArray ((0, 0), (h - 1, w - 1)) mat
+  where
+    toCell '.' = Just Empty
+    toCell '|' = Just VertSplitter
+    toCell '-' = Just HorizSplitter
+    toCell '/' = Just Slash
+    toCell '\\' = Just Backslash
+    toCell _ = Nothing
