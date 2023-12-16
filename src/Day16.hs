@@ -22,13 +22,7 @@ data BeamHead = BeamHead
   }
   deriving (Show, Eq, Ord)
 
-data Beams = Beams
-  { seen :: Set BeamHead,
-    heads :: [BeamHead]
-  }
-  deriving (Show, Eq)
-
-type Simulation = RWS Grid (Set Pos) Beams
+type Simulation = RWS Grid (Set Pos) (Set BeamHead)
 
 next :: BeamHead -> BeamHead
 next (BeamHead p d) = BeamHead (next' d p) d
@@ -43,12 +37,12 @@ next (BeamHead p d) = BeamHead (next' d p) d
 advance :: BeamHead -> Simulation [BeamHead]
 advance bh@(BeamHead position direction) = do
   grid <- ask
-  seen' <- gets seen
+  seen <- get
 
-  if inRange (bounds grid) position && bh `notMember` seen'
+  if inRange (bounds grid) position && bh `notMember` seen
     then do
       tell $ singleton position
-      modify $ \beams -> beams {seen = insert bh seen'}
+      modify $ insert bh
       pure . fmap next $ case (grid ! position, direction) of
         (Empty, _) -> [bh]
         (VertSplitter, N) -> [bh]
@@ -67,14 +61,13 @@ advance bh@(BeamHead position direction) = do
         (Backslash, W) -> [bh {dir = N}]
     else pure []
 
-simulate :: Simulation ()
-simulate = do
-  heads' <- join <$> (gets heads >>= traverse advance)
-  modify $ \b -> b {heads = heads'}
-  unless (Relude.null heads') simulate
+simulate :: [BeamHead] -> Simulation ()
+simulate heads = do
+  heads' <- foldMapM advance heads
+  unless (Relude.null heads') $ simulate heads'
 
 runSimulation :: BeamHead -> Grid -> Int
-runSimulation origin g = size . snd . evalRWS simulate g $ Beams mempty [origin]
+runSimulation origin g = size . snd . evalRWS (simulate [origin]) g $ mempty
 
 part1, part2 :: Grid -> Int
 part1 = runSimulation $ BeamHead (0, 0) E
