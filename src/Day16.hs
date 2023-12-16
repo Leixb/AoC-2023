@@ -5,6 +5,7 @@ module Day16 where
 import Control.Monad.RWS
 import Data.Array
 import qualified Data.ByteString.Char8 as BS
+import Data.Foldable (Foldable (maximum))
 import Data.Set
 import Relude
 import qualified Relude.Unsafe as Unsafe
@@ -30,17 +31,6 @@ data Beams = Beams
   deriving (Show, Eq)
 
 type Simulation = RWS Grid (Set Pos) Beams
-
-initialBeams :: Beams
-initialBeams = Beams mempty [BeamHead (0, 0) E]
-
-runSimulation :: Grid -> Set Pos
-runSimulation l = snd $ evalRWS run l initialBeams
-
--- part1 :: Grid -> Int
--- part1 = size . runSimulation
-
-part1 = runSimulation
 
 next :: BeamHead -> BeamHead
 next (BeamHead p d) = BeamHead (next' p d) d
@@ -93,6 +83,30 @@ run = do
       advanceAll
       beams <- gets heads
       unless (Relude.null beams) loop
+
+initialBeams :: BeamHead -> Beams
+initialBeams h = Beams mempty [h]
+
+runSimulation :: Grid -> Set Pos
+runSimulation = runSimulation' $ BeamHead (0, 0) E
+
+runSimulation' :: BeamHead -> Grid -> Set Pos
+runSimulation' initial l = snd $ evalRWS run l (initialBeams initial)
+
+part1 :: Grid -> Int
+part1 = size . runSimulation
+
+part2 :: Grid -> Int
+part2 g =
+  let ((y0, x0), (y1, x1)) = bounds g
+      possibleInitials =
+        join
+          [ [BeamHead (y0, x) S | x <- [x0 .. x1]],
+            [BeamHead (y1, x) N | x <- [x0 .. x1]],
+            [BeamHead (y, x0) E | y <- [y0 .. y1]],
+            [BeamHead (y, x1) W | y <- [y0 .. y1]]
+          ]
+   in maximum $ fmap size . runSimulation' <$> possibleInitials <*> [g]
 
 toCell :: Char -> Maybe Cell
 toCell '.' = Just Empty
