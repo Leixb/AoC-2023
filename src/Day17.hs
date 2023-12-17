@@ -47,7 +47,8 @@ doMoveN :: Grid -> Dir -> Int -> S -> Maybe S
 doMoveN g d n = foldl' (>=>) pure $ replicate n (doMove g d)
 
 doMoves :: Grid -> S -> Dir -> [S]
-doMoves g s d = mapMaybe (flip (doMoveN g d) s) [1 .. 3]
+-- doMoves g s d = mapMaybe (flip (doMoveN g d) s) [1 .. 3]
+doMoves g s d = mapMaybe (flip (doMoveN g d) s) [4 .. 10]
 
 allMoves :: Grid -> S -> [S]
 allMoves g s@(_, _, prev) = nextDir prev >>= doMoves g s
@@ -60,7 +61,6 @@ solve g distances target h = do
     then pure acc
     else do
       let moves = allMoves g (acc, pos, dir)
-          -- distances' = if acc <= distances ! (pos, dir) then distances // [((pos, dir), acc)] else distances
           moves' = filter (\(acc, p, d) -> acc < distances ! (p, d)) moves
           distances' = foldl' (\dist (acc, p, d) -> dist // [((p, d), acc)]) distances moves'
           h'' = foldl' (flip H.insert) h' moves'
