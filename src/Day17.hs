@@ -1,12 +1,10 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
 module Day17 where
 
 import Data.Array.Unboxed
 import qualified Data.ByteString.Char8 as BS
 import Data.Char (digitToInt)
 import Data.Heap hiding (filter)
-import qualified Data.Heap as H hiding (filter)
+import qualified Data.Heap as H
 import Relude
 
 type Pos = (Int, Int)
@@ -44,32 +42,33 @@ doMove g d (c, p, _) = do
   pure (c + g ! p', p', d)
 
 doMoveN :: Grid -> Dir -> Int -> S -> Maybe S
-doMoveN g d n = foldl' (>=>) pure $ replicate n (doMove g d)
+doMoveN g d n = foldl' (>=>) pure . replicate n $ doMove g d
 
-doMoves :: Grid -> S -> Dir -> [S]
--- doMoves g s d = mapMaybe (flip (doMoveN g d) s) [1 .. 3]
-doMoves g s d = mapMaybe (flip (doMoveN g d) s) [4 .. 10]
+doMoves :: Grid -> [Int] -> S -> Dir -> [S]
+doMoves g r s d = mapMaybe (flip (doMoveN g d) s) r
 
-allMoves :: Grid -> S -> [S]
-allMoves g s@(_, _, prev) = nextDir prev >>= doMoves g s
+allMoves :: Grid -> [Int] -> S -> [S]
+allMoves g r s@(_, _, prev) = nextDir prev >>= doMoves g r s
 
-solve :: Grid -> UArray (Pos, Dir) Int -> Pos -> MinHeap S -> Maybe Int
-solve g distances target h = do
+solve' :: Grid -> [Int] -> UArray (Pos, Dir) Int -> Pos -> MinHeap S -> Maybe Int
+solve' g r distances target h = do
   ((acc, pos, dir), h') <- H.view h
 
   if pos == target
     then pure acc
     else do
-      let moves = allMoves g (acc, pos, dir)
+      let moves = allMoves g r (acc, pos, dir)
           moves' = filter (\(acc, p, d) -> acc < distances ! (p, d)) moves
-          distances' = foldl' (\dist (acc, p, d) -> dist // [((p, d), acc)]) distances moves'
+          distances' = distances // fmap (\(acc, p, d) -> ((p, d), acc)) moves'
           h'' = foldl' (flip H.insert) h' moves'
-      solve g distances' target h''
+      solve' g r distances' target h''
 
-part1 :: Grid -> Maybe Int
-part1 g =
-  let (low, hi) = bounds g
-   in solve g (emptyGrid ((low, minBound), (hi, maxBound))) hi (H.singleton (0, (0, 0), U))
+solve :: Grid -> [Int] -> Maybe Int
+solve g r = solve' g r (emptyGrid ((lo, minBound), (hi, maxBound))) hi $ H.singleton (0, (0, 0), U)
+  where
+    (lo, hi) = bounds g
+    emptyGrid = flip listArray $ repeat maxBound
 
-emptyGrid :: ((Pos, Dir), (Pos, Dir)) -> UArray (Pos, Dir) Int
-emptyGrid = flip listArray (repeat maxBound)
+part1, part2 :: Grid -> Maybe Int
+part1 = (`solve` [1 .. 3])
+part2 = (`solve` [4 .. 10])
