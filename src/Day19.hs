@@ -2,33 +2,60 @@
 
 module Day19 where
 
+import Data.Array (Ix (inRange))
 import Data.Char (isAlpha, isDigit, isLowerCase)
 import qualified Data.Map as M
 import Relude
 import qualified Relude.Unsafe as Unsafe
 import Text.ParserCombinators.ReadP
 
-data Xmas = Xmas {x, m, a, s :: Int} deriving (Show, Eq, Ord)
+type Problem = (Dict, [Xmas])
+
+type Dict = M.Map String Workflow
+
+type Range = (Int, Int)
+
+data Field = X | M | A | S deriving (Show, Eq, Ord)
+
+data XmasT a = Xmas {x, m, a, s :: a} deriving (Show, Eq, Ord)
+
+type Xmas = XmasT Int
+
+type XmasR = XmasT Range
 
 data Veredict = Accept | Reject | Forward String deriving (Show, Eq)
 
-type Rule = Xmas -> Maybe Veredict
+data Rule = Rule
+  { variable :: Field,
+    operation :: Ordering,
+    threshold :: Int,
+    veredict :: Veredict
+  }
+  deriving (Show, Eq)
 
-type Problem = (Dict, [Xmas])
+data Workflow = Workflow
+  { rules :: [Rule],
+    def :: Veredict
+  }
+  deriving (Show, Eq)
 
-type Dict = M.Map String Rule
+size :: Range -> Int
+size (l, r) = l - r + 1
 
-toWorkflow :: [Rule] -> Rule
-toWorkflow r xmas = asum $ ($ xmas) <$> r
+(!) :: XmasT a -> Field -> a
+v ! X = x v
+v ! M = m v
+v ! A = a v
+v ! S = s v
 
 parseRule :: ReadP Rule
 parseRule = do
-  t <- choice [char 'x' $> x, char 'm' $> m, char 'a' $> a, char 's' $> s]
-  f <- (char '>' $> (>)) +++ (char '<' $> (<))
+  t <- choice [char 'x' $> X, char 'm' $> M, char 'a' $> A, char 's' $> S]
+  o <- (char '>' $> GT) +++ (char '<' $> LT)
   n <- Unsafe.read <$> munch1 isDigit
   out <- char ':' *> parseVeredict
 
-  pure $ \xmas -> if f (t xmas) n then Just out else Nothing
+  pure $ Rule t o n out
 
 parseVeredict :: ReadP Veredict
 parseVeredict =
@@ -37,14 +64,12 @@ parseVeredict =
     "R" -> pure Reject
     label -> pure $ Forward label
 
-parseRuleOrVeredict :: ReadP Rule
-parseRuleOrVeredict = parseRule <++ (const . Just <$> parseVeredict)
-
-parseWorkflow :: ReadP (String, Rule)
+parseWorkflow :: ReadP (String, Workflow)
 parseWorkflow = do
   label <- munch1 isLowerCase <* char '{'
-  rules <- sepBy1 parseRuleOrVeredict (char ',') <* char '}'
-  pure (label, toWorkflow rules)
+  rules <- many1 (parseRule <* char ',')
+  def <- parseVeredict <* char '}'
+  pure (label, Workflow rules def)
 
 -- This assumes that xmas is in order
 parseXmas :: ReadP Xmas
@@ -64,14 +89,22 @@ parseProblem = do
 parse :: ByteString -> Maybe Problem
 parse = fmap fst . viaNonEmpty head . readP_to_S parseProblem . decodeUtf8
 
-getVeredict :: Dict -> String -> Xmas -> Maybe Veredict
-getVeredict dict label xmas = case dict M.! label $ xmas of
-  Just (Forward label') -> getVeredict dict label' xmas
-  res -> res
+applyRule :: Xmas -> Rule -> Maybe Veredict
+applyRule xmas (Rule var op thr ver) = guard ((xmas ! var) `compare` thr == op) *> Just ver
 
-toBool :: Maybe Veredict -> Bool
-toBool (Just Accept) = True
-toBool (Just Reject) = False
+applyWorkflow :: Workflow -> Xmas -> Veredict
+applyWorkflow (Workflow rules def) xmas = fromMaybe def . viaNonEmpty head $ mapMaybe (applyRule xmas) rules
+
+getVeredict :: Dict -> String -> Xmas -> Veredict
+getVeredict dict label xmas = case applyWorkflow w xmas of
+  Forward label' -> getVeredict dict label' xmas
+  res -> res
+  where
+    w = dict M.! label
+
+toBool :: Veredict -> Bool
+toBool Accept = True
+toBool Reject = False
 toBool e = error $ "Unexpected veredict: " <> show e
 
 value :: Xmas -> Int
