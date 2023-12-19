@@ -3,6 +3,7 @@
 module Day19 (part1, part2, parse) where
 
 import Data.Char (isAlpha, isDigit, isLowerCase)
+import Data.List (lookup)
 import qualified Data.Map as M
 import Relude
 import qualified Relude.Unsafe as Unsafe
@@ -30,19 +31,12 @@ type Workflow = ([Rule], Veredict)
 
 type Dict = M.Map String Workflow
 
-(!) :: XmasT a -> Field -> a
-v ! X = x v
-v ! M = m v
-v ! A = a v
-v ! S = s v
-
 parseRule :: ReadP Rule
 parseRule = do
   t <- choice [char 'x' $> X, char 'm' $> M, char 'a' $> A, char 's' $> S]
   o <- (char '>' $> GT) +++ (char '<' $> LT)
   n <- Unsafe.read <$> munch1 isDigit
   out <- char ':' *> parseVeredict
-
   pure $ Rule t o n out
 
 parseVeredict :: ReadP Veredict
@@ -59,14 +53,17 @@ parseWorkflow = do
   def <- parseVeredict <* char '}'
   pure (label, (rules, def))
 
--- This assumes that xmas is in order
 parseXmas :: ReadP Xmas
 parseXmas = between (char '{') (char '}') $ do
-  x' <- string "x=" *> (Unsafe.read <$> munch1 isDigit <* char ',')
-  m' <- string "m=" *> (Unsafe.read <$> munch1 isDigit <* char ',')
-  a' <- string "a=" *> (Unsafe.read <$> munch1 isDigit <* char ',')
-  s' <- string "s=" *> (Unsafe.read <$> munch1 isDigit)
-  pure $ Xmas x' m' a' s'
+  lookupList <- sepBy1 parseLookup (char ',')
+  case mapMaybe (`lookup` lookupList) "xmas" of
+    [x', m', a', s'] -> pure $ Xmas x' m' a' s'
+    _ -> pfail
+  where
+    parseLookup = do
+      c <- satisfy isAlpha <* char '='
+      n <- Unsafe.read <$> munch1 isDigit
+      pure (c, n)
 
 parseProblem :: ReadP Problem
 parseProblem = do
@@ -140,19 +137,14 @@ applyWorkflowR (rules, def) = go rules def
         rec = go rs d rest
 
 part2 :: Problem -> Int
-part2 (dict, _) = go (Xmas (1, 4000) (1, 4000) (1, 4000) (1, 4000), Forward "in")
+part2 (dict, _) = go (Xmas range range range range, Forward "in")
   where
+    range = (1, 4000)
     go :: (XmasR, Veredict) -> Int
     go (xmas, ver) = case ver of
       Forward label -> sum $ go <$> applyWorkflowR (dict M.! label) xmas
       Accept -> size xmas
       Reject -> 0
-
-update :: XmasT a -> Field -> a -> XmasT a
-update xmas X v = xmas {x = v}
-update xmas M v = xmas {m = v}
-update xmas A v = xmas {a = v}
-update xmas S v = xmas {s = v}
 
 size :: XmasR -> Int
 size xmas | isEmpty xmas = 0
@@ -160,3 +152,15 @@ size xmas = product . fmap size' $ (xmas !) <$> [X, M, A, S]
   where
     size' (l, r) | l > r = 0
     size' (l, r) = r - l + 1
+
+update :: XmasT a -> Field -> a -> XmasT a
+update xmas X v = xmas {x = v}
+update xmas M v = xmas {m = v}
+update xmas A v = xmas {a = v}
+update xmas S v = xmas {s = v}
+
+(!) :: XmasT a -> Field -> a
+v ! X = x v
+v ! M = m v
+v ! A = a v
+v ! S = s v
