@@ -1,8 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Day19 where
+module Day19 (part1, part2, parse) where
 
-import Data.Array (Ix (inRange))
 import Data.Char (isAlpha, isDigit, isLowerCase)
 import qualified Data.Map as M
 import Relude
@@ -11,17 +10,11 @@ import Text.ParserCombinators.ReadP
 
 type Problem = (Dict, [Xmas])
 
-type Dict = M.Map String Workflow
-
-type Range = (Int, Int)
-
 data Field = X | M | A | S deriving (Show, Eq, Ord)
 
 data XmasT a = Xmas {x, m, a, s :: a} deriving (Show, Eq, Ord)
 
 type Xmas = XmasT Int
-
-type XmasR = XmasT Range
 
 data Veredict = Accept | Reject | Forward String deriving (Show, Eq)
 
@@ -33,14 +26,9 @@ data Rule = Rule
   }
   deriving (Show, Eq)
 
-data Workflow = Workflow
-  { rules :: [Rule],
-    def :: Veredict
-  }
-  deriving (Show, Eq)
+type Workflow = ([Rule], Veredict)
 
-size :: Range -> Int
-size (l, r) = l - r + 1
+type Dict = M.Map String Workflow
 
 (!) :: XmasT a -> Field -> a
 v ! X = x v
@@ -69,7 +57,7 @@ parseWorkflow = do
   label <- munch1 isLowerCase <* char '{'
   rules <- many1 (parseRule <* char ',')
   def <- parseVeredict <* char '}'
-  pure (label, Workflow rules def)
+  pure (label, (rules, def))
 
 -- This assumes that xmas is in order
 parseXmas :: ReadP Xmas
@@ -93,7 +81,7 @@ applyRule :: Xmas -> Rule -> Maybe Veredict
 applyRule xmas (Rule var op thr ver) = guard ((xmas ! var) `compare` thr == op) *> Just ver
 
 applyWorkflow :: Workflow -> Xmas -> Veredict
-applyWorkflow (Workflow rules def) xmas = fromMaybe def . viaNonEmpty head $ mapMaybe (applyRule xmas) rules
+applyWorkflow (r, d) xmas = fromMaybe d . viaNonEmpty head $ mapMaybe (applyRule xmas) r
 
 getVeredict :: Dict -> String -> Xmas -> Veredict
 getVeredict dict label xmas = case applyWorkflow w xmas of
@@ -112,3 +100,63 @@ value (Xmas x' m' a' s') = x' + m' + a' + s'
 
 part1 :: Problem -> Int
 part1 (dict, xmas) = sum $ value <$> filter (toBool . getVeredict dict "in") xmas
+
+-- Part 2
+
+type Range = (Int, Int)
+
+type XmasR = XmasT Range
+
+-- Returns a pair of ranges, the first one is the range of the values that are
+-- not matched by the rule, the second one is the range of the values that are
+-- matched by the rule. (the range (a, b) is empty if a > b)
+intersect :: Range -> Ordering -> Int -> (Range, Range)
+intersect (l, r) op thr
+  | op == GT = splitRange (l, r) thr
+  | op == LT = swap $ splitRange (l, r) (thr - 1)
+  | otherwise = error "Unexpected operation"
+  where
+    splitRange (l', r') th = ((l', min th r'), (max l' (th + 1), r'))
+
+isEmpty :: XmasR -> Bool
+isEmpty xmas = any (uncurry (>) . (xmas !)) [X, M, A, S]
+
+applyRuleR :: XmasR -> Rule -> (XmasR, (XmasR, Veredict))
+applyRuleR xmas (Rule v op thr ver) = (update xmas v rest, (update xmas v ok, ver))
+  where
+    (rest, ok) = intersect (xmas ! v) op thr
+
+applyWorkflowR :: Workflow -> XmasR -> [(XmasR, Veredict)]
+applyWorkflowR (rules, def) = go rules def
+  where
+    go :: [Rule] -> Veredict -> XmasR -> [(XmasR, Veredict)]
+    go _ _ xmas | isEmpty xmas = []
+    go [] d xmas = [(xmas, d)]
+    go (r : rs) d xmas
+      | isEmpty (fst ok) = rec
+      | otherwise = ok : rec
+      where
+        (rest, ok) = applyRuleR xmas r
+        rec = go rs d rest
+
+part2 :: Problem -> Int
+part2 (dict, _) = go (Xmas (1, 4000) (1, 4000) (1, 4000) (1, 4000), Forward "in")
+  where
+    go :: (XmasR, Veredict) -> Int
+    go (xmas, ver) = case ver of
+      Forward label -> sum $ go <$> applyWorkflowR (dict M.! label) xmas
+      Accept -> size xmas
+      Reject -> 0
+
+update :: XmasT a -> Field -> a -> XmasT a
+update xmas X v = xmas {x = v}
+update xmas M v = xmas {m = v}
+update xmas A v = xmas {a = v}
+update xmas S v = xmas {s = v}
+
+size :: XmasR -> Int
+size xmas | isEmpty xmas = 0
+size xmas = product . fmap size' $ (xmas !) <$> [X, M, A, S]
+  where
+    size' (l, r) | l > r = 0
+    size' (l, r) = r - l + 1
