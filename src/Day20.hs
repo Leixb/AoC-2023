@@ -10,7 +10,7 @@ import qualified Data.Map as M
 import Relude hiding (state)
 import Text.ParserCombinators.ReadP hiding (get)
 
-data ModuleState = BroadCaster | FlipFlop Bool | Conjunction (Map String Bool) deriving (Show)
+data ModuleState = BroadCaster | FlipFlop Bool | Conjunction (Map String Bool) | Sink deriving (Show)
 
 data Module = Module {state :: ModuleState, outputs :: [String]} deriving (Show)
 
@@ -42,6 +42,7 @@ fixConjunctions modules = M.mapWithKey addInputs modules
       BroadCaster -> module'
       FlipFlop _ -> module'
       Conjunction _ -> module' {state = Conjunction $ M.fromList $ (,False) <$> findInputs name}
+      Sink -> module'
 
     findInputs name = M.keys $ M.filter (elem name . outputs) modules
 
@@ -54,6 +55,7 @@ pulse (Conjunction m) b from
   | otherwise = (Conjunction m', Just True)
   where
     m' = M.insert from b m
+pulse Sink _ _ = (Sink, Nothing)
 
 -- src, dst, signal
 type Signal = (String, String, Bool)
@@ -71,14 +73,27 @@ type ModuleM = RWS () (Sum Int, Sum Int) (ModuleMap, [Signal])
 
 pulseM :: ModuleM ()
 pulseM = fmap void runMaybeT $ do
-  (modules, signal@(_, name, _) : queue) <- get
-  if M.notMember name modules
-    then put (modules, queue)
-    else do
-      module' <- hoistMaybe $ M.lookup name modules
-      let (module'', signals) = pulse' module' signal
-      lift $ countPulses signals
-      put (M.insert name module'' modules, queue ++ signals)
+  signal@(_, name, _) <- popQueue
+  (module'', signals) <- lift $ (`pulse'` signal) <$> getModule name
+  lift $ updateModule name module'' *> pushQueue signals
+
+popQueue :: MaybeT ModuleM Signal
+popQueue = do
+  (s : ss) <- gets snd
+  modify (second $ const ss) $> s
+
+pushQueue :: [Signal] -> ModuleM ()
+pushQueue s = modify (second (++ s)) *> countPulses s
+
+updateModule :: String -> Module -> ModuleM ()
+updateModule name module' = modify (first $ M.insert name module')
+
+getModule :: String -> ModuleM Module
+getModule name = do
+  modules <- gets fst
+  pure $ case M.lookup name modules of
+    Nothing -> Module Sink []
+    Just module' -> module'
 
 countPulses :: [Signal] -> ModuleM ()
 countPulses [] = pure ()
