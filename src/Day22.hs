@@ -3,7 +3,6 @@ module Day22 (part1, part2, parse) where
 import Control.Monad
 import Control.Monad.ST
 import Data.Array
-import Data.Array.Base
 import Data.Array.ST
 import Data.Char (isDigit)
 import Data.Foldable (Foldable (maximum))
@@ -33,13 +32,10 @@ parse = fmap fst . viaNonEmpty last . readP_to_S (brick `sepBy` char '\n') . dec
     int = Unsafe.read <$> munch1 isDigit
 
 brickToCoordList :: Brick -> ([(Int, Int)], Int)
-brickToCoordList (((x1, y1), z1), ((x2, y2), z2)) =
-  ( [(x, y) | x <- [x1 .. x2], y <- [y1 .. y2]],
-    z2 - z1 + 1
-  )
+brickToCoordList (((x1, y1), z1), ((x2, y2), z2)) = ([(x, y) | x <- [x1 .. x2], y <- [y1 .. y2]], z2 - z1 + 1)
 
-push' :: (STArray s (Int, Int) (Int, Int), M.Map Int [Int]) -> (Int, ([(Int, Int)], Int)) -> ST s (STArray s (Int, Int) (Int, Int), M.Map Int [Int])
-push' (grid, supports) (n, (coords, h)) = do
+push :: (STArray s (Int, Int) (Int, Int), M.Map Int [Int]) -> (Int, ([(Int, Int)], Int)) -> ST s (STArray s (Int, Int) (Int, Int), M.Map Int [Int])
+push (grid, supports) (n, (coords, h)) = do
   gridValues <- traverse (readArray grid) coords
   let height = maximum $ fst <$> gridValues
       supporters = nub . sort $ snd <$> filter ((== height) . fst) gridValues
@@ -47,43 +43,33 @@ push' (grid, supports) (n, (coords, h)) = do
   traverse_ (\p -> writeArray grid p (height + h, n)) coords
   pure (grid, supports')
 
-process :: [(Int, ([(Int, Int)], Int))] -> Array (Int, Int) (Int, Int) -> M.Map Int [Int] -> (Array (Int, Int) (Int, Int), M.Map Int [Int])
+process :: [(Int, ([(Int, Int)], Int))] -> Array (Int, Int) (Int, Int) -> M.Map Int [Int] -> M.Map Int [Int]
 process queue grid supports = runST $ do
   grid' <- thaw grid
-  let initial = (grid', supports)
-  (arr, fm) <- foldM push' initial queue
-  arr' <- freeze arr
-  pure (arr', fm)
+  snd <$> foldM push (grid', supports) queue
 
 getNeeded :: [(Int, [Int])] -> [Int]
 getNeeded = concatMap snd . filter ((== 1) . length . snd)
 
-part1 :: Problem -> Int
-part1 p =
-  let sorted = sortOn (z . fst) p
-      mx = maximum (x . fst <$> sorted)
-      my = maximum (y . fst <$> sorted)
-      supports = M.fromList [(l, []) | l <- [1 .. length sorted]]
-      grid = Data.Array.Base.listArray ((0, 0), (my, mx)) $ repeat (0, -1) :: Array (Int, Int) (Int, Int)
-      queue = (zip [1 ..] $ brickToCoordList <$> sorted)
-      (_, m) = process queue grid supports
-      needed = filter (/= -1) . nub . sort . getNeeded $ M.toList m
-   in length sorted - length needed
+findDeps :: Problem -> Map Int [Int]
+findDeps p = process queue grid M.empty
+  where
+    sorted = sortOn (z . fst) p
+    mx = maximum (x . fst <$> sorted)
+    my = maximum (y . fst <$> sorted)
+    grid = listArray ((0, 0), (my, mx)) $ repeat (0, -1)
+    queue = zip [1 ..] $ brickToCoordList <$> sorted
 
-part2 :: Problem -> Int
-part2 p =
-  let sorted = sortOn (z . fst) p
-      mx = maximum (x . fst <$> sorted)
-      my = maximum (y . fst <$> sorted)
-      supports = M.fromList [(l, []) | l <- [1 .. length sorted]]
-      grid = Data.Array.Base.listArray ((0, 0), (my, mx)) $ repeat (0, -1) :: Array (Int, Int) (Int, Int)
-      queue = (zip [1 ..] $ brickToCoordList <$> sorted)
-      (_, m) = process queue grid supports
-      m' = filter ((/= [-1]) . snd) $ M.toList m
-   in sum [pred . length $ calcFalls m' [n] | n <- [1 .. length sorted]]
+part1, part2 :: Problem -> Int
+part1 p = length p - length needed
+  where
+    needed = filter (/= -1) . nub . sort . getNeeded . M.toList $ findDeps p
+part2 p = getSum $ mconcat [calcFalls m [n] | n <- [1 .. length p]]
+  where
+    m = filter ((/= [-1]) . snd) . M.toList $ findDeps p
 
-calcFalls :: [(Int, [Int])] -> [Int] -> [Int]
-calcFalls [] fallen = fallen
+calcFalls :: [(Int, [Int])] -> [Int] -> Sum Int
+calcFalls [] _ = mempty
 calcFalls ((a, b) : xs) fallen
-  | all (`elem` fallen) b = calcFalls xs (a : fallen)
+  | all (`elem` fallen) b = 1 <> calcFalls xs (a : fallen)
   | otherwise = calcFalls xs fallen
